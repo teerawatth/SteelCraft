@@ -27,7 +27,7 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['*']
 
-CSRF_TRUSTED_ORIGINS = ['http://127.0.0.1:8000','https://4b11-202-176-130-47.ngrok-free.app','https://55a9-49-229-22-10.ngrok-free.app']
+CSRF_TRUSTED_ORIGINS = ['http://127.0.0.1:8000','https://586485bea01e-17076610223505492659.ngrok-free.app']
 
 CSRF_COOKIE_SECURE = False
 CSRF_COOKIE_SAMESITE = None
@@ -42,14 +42,48 @@ INSTALLED_APPS = [
     'django.contrib.humanize',
     'crispy_forms',
     'crispy_tailwind',
+    'django_extensions',
     'base_app',
     'members',
     'manager',
+    'staff',
+
 ]
 
 CRISPY_ALLOWED_TEMPLATE_PACKS = "tailwind"
 
 CRISPY_TEMPLATE_PACK = "tailwind"
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'theerawatthongriem@gmail.com'
+EMAIL_HOST_PASSWORD = 'vplusdvesrybfsyd'
+
+X_FRAME_OPTIONS = 'SAMEORIGIN'
+PLOTLY_DASH = {
+    'ws_route': 'dpd/ws/route/',
+    'http_route': 'dpd/views',
+    'cache_timeout_initial_arguments': 60,
+    'serve_locally': True,
+}
+
+# from_email = 'theerawatthongriem@gmail.com'
+
+# LOGGING = {
+#     'version': 1,
+#     'disable_existing_loggers': False,
+#     'handlers': {
+#         'console': {
+#             'class': 'logging.StreamHandler',
+#         },
+#     },
+#     'root': {
+#         'handlers': ['console'],
+#         'level': 'DEBUG',
+#     },
+# }
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -60,6 +94,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+
 ]
 
 
@@ -106,9 +141,9 @@ DATABASES = {
 # DATABASES = {
 #     'default': {
 #         'ENGINE': 'django.db.backends.mysql', 
-#         'NAME': 'stc',
+#         'NAME': 'steelcraft',
 #         'USER': 'root',
-#         'PASSWORD': '',
+#         'PASSWORD': '1234',
 #         'HOST': 'localhost',
 #         'PORT': '3306',
 #     }

@@ -27,10 +27,21 @@ from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage,ImageSendMessage
 
-from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 import requests
 
+
+from django.contrib.auth.views import PasswordResetView, PasswordResetConfirmView
+from django.urls import reverse_lazy
+
+class ForgotPasswordView(PasswordResetView):
+    template_name = 'forgot_password.html'
+    email_template_name = 'forgot_password_email.html'
+    success_url = reverse_lazy('login')  
+
+class PasswordResetConfirmView(PasswordResetConfirmView):
+    template_name = 'reset_password_confirm.html'
+    success_url = reverse_lazy('login') 
 
 
 LINE_CHANNEL_SECRET = 'c1d5e281953c8e81cf8b80c4c0230f1a'
@@ -66,30 +77,28 @@ def handle_message(event):
     if text == 'ติดตามสถานะ':  # รับ user_id ของผู้ส่งข้อความ
         print("From user ID:", user_id)  # แสดง us
         user_msg = UserMessage.objects.get(line_id=user_id)
-        order_status = Order.objects.filter(user=user_msg.user)
+        order_status = Order.objects.filter(user=user_msg.user).exclude(status='ยกเลิก')
         print(order_status)
 
-        for i in order_status:
-            img_url = f'https://55a9-49-229-22-10.ngrok-free.app'+i.product.image.url 
-            text_msg = f'คำสั่งซื้อที่ {i.id} ผู้ใช้ {i.user} \n คุณ {i.first_name} {i.last_name}' + f'\n\n {i.product.name} ราคา {i.product.price} จำนวน {i.quantity} รายการ \n ราคารวม {float(i.total_price)} \n\n สถานะ : {i.status}' + '\n\n' 'ดูเพิ่มเติม คลิก : ' + f'https://2736-202-176-131-45.ngrok-free.app/members/order_detail/{i.id}/'
+        if order_status:
+            for i in order_status:
+                order_user = f'คำสั่งซื้อที่ {i.id} \nลูกค้า คุณ {i.first_name} {i.last_name}'
+                order_product = f'\n\nสินค้า : {i.product.name} \n'
+                order_price = f'ราคา {int(i.product.price):,} บาท \n'
+                order_qty = f'จำนวน {i.quantity} รายการ \n'
+                order_total_price = f'ราคารวม {int(i.total_price):,} บาท'
+                order_state = f'\n\n สถานะ : {i.status}'
+                
+                text_msg =  (order_user + order_product + order_qty + order_price
+                + order_total_price + order_state)
+                send_line_message(user_id, message=text_msg)
+        else:
+            text_msg = 'ไม่พบคำสั่งซื้อ'
             send_line_message(user_id, message=text_msg)
+    if text == 'ติดต่อเจ้าหน้าที่':  # รับ user_id ของผู้ส่งข้อความ
+        text_msg = 'รอเจ้าหน้าที่ตอบกลับ'
+        send_line_message(user_id, message=text_msg)
 
-# def send_line_message(user_id, message):
-#     url = 'https://api.line.me/v2/bot/message/push'
-#     headers = {
-#         'Content-Type': 'application/json',
-#         'Authorization': f'Bearer {LINE_ACCESS_TOKEN}'
-#     }
-#     data = {
-#         'to': user_id,
-#         'messages': [
-#             {
-#                 'type': 'text',
-#                 'text': message
-#             }
-#         ]
-#     }
-#     response = requests.post(url, headers=headers, json=data)
 
 def send_line_message(user_id, message):
     url = 'https://api.line.me/v2/bot/message/push'
@@ -97,37 +106,29 @@ def send_line_message(user_id, message):
         'Content-Type': 'application/json',
         'Authorization': f'Bearer {LINE_ACCESS_TOKEN}'
     }
-    text = {
+    data = {
+        'to': user_id,
+        'messages': [
+            {
                 'type': 'text',
                 'text': message
             }
-
-    # img = {
-    #             'type': 'image',
-    #             'originalContentUrl': image_url,
-    #             'previewImageUrl': image_url
-    #         }
-
-    data = {
-            'to': user_id,
-            'messages': [
-                text,
-                # img
-            ]
-        }
-
+        ]
+    }
     response = requests.post(url, headers=headers, json=data)
 
 @login_required(login_url='login')
 def connect_line_user(request):
     if request.method == 'POST':
         data = request.POST.get('userId')
-        check = UserMessage.objects.filter(user=request.user)
-        if check is not None:
-        #     message = f'{request.user} {request.user.first_name} {request.user.last_name} \n ผูกบัญชีไว้แล้ว ครับ/ค่ะ'
-        # else:
+        check = UserMessage.objects.filter(user=request.user).first()
+        if check is None:
             UserMessage.objects.create(user=request.user, line_id=data)
             message = f'{request.user} {request.user.first_name} {request.user.last_name} \n เชื่อมต่อบัญชีไลน์เรียบร้อย ครับ/ค่ะ'
+            # You might want to add some logic here to display the message
+        else:
+            return redirect('dashboard')
+            
         url = 'https://api.line.me/v2/bot/message/push'
         headers = {
         'Content-Type': 'application/json',
@@ -152,79 +153,88 @@ def connect_line_user(request):
         else:
             return redirect('dashboard')
 
+@login_required(login_url='login')
 def line(request):
     return render(request,'line.html')
 
 def home(request):
-
-    products = Product.objects.all()
-    return render(request,'home.html',{'products':products,'favorite_count':favorite_count(request)})
+    users = User.objects.filter(is_staff=True) | User.objects.filter(is_superuser=True)
+    products = Product.objects.filter(user__in=users)
+    return render(request,'home.html',{
+        'products':products,
+        'favorite_count':favorite_count(request)
+        })
 
 def register(request):
-    form = RegisterForm()
     if request.method == 'POST':
         form = RegisterForm(request.POST)
-        if form.is_valid():
-            form.save()
+        profile_form = UserProfileForm(request.POST)
+        if form.is_valid() and profile_form.is_valid():
+            user = form.save(commit=False)
+            user.save()
+            profile = profile_form.save(commit=False)
+            profile.user = user
+            profile.save()
             return redirect('login')
-        else:
-            form = RegisterForm()
     else:
         form = RegisterForm()
-    return render(request,'register.html',{'form':form })
+        profile_form = UserProfileForm()
 
+    return render(request, 'register.html', {'form': form, 'profile_form': profile_form})
 
 def sign_in(request):
     form = LoginForm()
     if request.method == 'POST':
         form = LoginForm(request.POST)
         if form.is_valid():
-            username = request.POST.get('username')
-            password = request.POST.get('password')
+            username = form.cleaned_data.get('username')
+            password = form.cleaned_data.get('password')
 
-            user = authenticate(username=username,password=password)
+            user = authenticate(username=username, password=password)
             if user:
-                if user.is_superuser or user.is_staff and not user.is_active:
+                if user.is_superuser:
                     login(request, user)
                     return redirect('manager_dashboard') 
+                elif user.is_staff:
+                    login(request, user)
+                    return redirect('staff_dashboard') 
                 else:
                     login(request, user)
                     return redirect('dashboard')  
-
-        else:
-            form = LoginForm()
-    else:
-        form = LoginForm()
-
-    return render(request,'login.html',{'form':form })
-
+            else:
+                form.add_error(None, 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง')
+    
+    return render(request, 'login.html', {'form': form})
 
 @login_required(login_url='login')
 def sign_out(request):
     logout(request)
     return redirect('login')
 
-
 @login_required(login_url='login')
 def profile(request):
     return render(request,'profile.html' ,{'favorite_count':favorite_count(request)})
 
-
 @login_required(login_url='login')
 def editprofile(request):
-    form = EditForm(instance=request.user)
+    user = request.user
+    user_profile, created = UserProfile.objects.get_or_create(user=user)
+    
     if request.method == 'POST':
-        form = EditForm(request.POST,instance=request.user)
-        if form.is_valid():
+        form = EditForm(request.POST, instance=user)
+        userprofile_form = UserProfileForm(request.POST, instance=user_profile)
+        
+        if form.is_valid() and userprofile_form.is_valid():
             form.save()
+            userprofile_form.save()
             return redirect('profile')
-        else:
-            form = EditForm()
     else:
-        form = EditForm(instance=request.user)
+        form = EditForm(instance=user)
+        userprofile_form = UserProfileForm(instance=user_profile)
 
-    return render(request,'editprofile.html',{'form':form ,'favorite_count':favorite_count(request)})
-
+    return render(request,'editprofile.html',{
+        'form':form ,'userprofile':userprofile_form ,
+        'favorite_count':favorite_count(request)})
 
 @login_required(login_url='login')
 def change_password(request):
@@ -237,18 +247,15 @@ def change_password(request):
         form = ChangePasswordForm(request.user)
     return render(request, 'change_password.html', {'form': form ,'favorite_count':favorite_count(request)})
 
-
 @login_required(login_url='login')
 def delete_user(request):
     User.objects.get(username=request.user).delete()
     return redirect('login')
 
-
 @login_required(login_url='login')
 @user_passes_test(members_user,login_url='found_page')
 def dashboard(request):
     return render(request,'members/dashboard.html',{'favorite_count':favorite_count(request)})
-
 
 def product_list(request):
     category = Category.objects.all()
@@ -257,7 +264,11 @@ def product_list(request):
     paginator = Paginator(products, 8)
     page = request.GET.get('page', 1)  
     products = paginator.get_page(page)
-    return render(request, 'product_list.html', {'products': products ,'favorite_count':favorite_count(request),'cate':category})
+    return render(request, 'product_list.html', {
+        'products': products ,
+        'favorite_count':favorite_count(request),
+        'cate':category
+        })
 
 def product_category(request,cate):
     category = Category.objects.get(id=cate)
@@ -269,6 +280,7 @@ def product_category(request,cate):
     return render(request, 'product_category.html', {'products': products ,'favorite_count':favorite_count(request),'cate':category})
 
 def product_members(request):
+    
     products = Product.objects.filter(user=request.user)
     paginator = Paginator(products, 8)
     page = request.GET.get('page', 1)  
@@ -276,65 +288,13 @@ def product_members(request):
     return render(request, 'members/product_members.html', {'products': products ,'favorite_count':favorite_count(request)})
 
 def product_detail(request,id):
-    users = User.objects.filter(is_staff=True) | User.objects.filter(is_superuser=True)
-    product = list(Product.objects.filter(user__in=users))
-    if len(product) >= 8:
-        random_products = sample(list(product), 5)
-    else:
-        random_products = product    
-    
     products = Product.objects.get(pk=id)
-    favorite = Favorite.objects.filter(user=request.user)
-    for i in favorite:
-        if i.product.id == id:
-            favorite = id
-        else:
-            favorite = ''
-    return render(request, 'product_detail.html', {'products': products,'product':random_products,'favorite':favorite, 'favorite_count':favorite_count(request)})
+    return render(request, 'product_detail.html', {'products': products})
 
 @login_required(login_url='login')
 def found_page(request):
     return render(request,'found_page.html')
 
 
-# def search_view(request):
-#     all_people = Product.objects.all()
-#     context = {'count': all_people.count()}
-#     return render(request, 'search.html', context)
 
 
-# def search_results_view(request):
-#     query = request.GET.get('search')
-#     print(f'{query = }')
-
-#     all_people = Product.objects.all()
-#     if query:
-#         if query != '':
-#             people = all_people.filter(name__icontains=query)
-#         elif query == '':
-#             people = all_people.all()
-
-#     context = {'people': people, 'count': all_people.count(),'all_people':all_people}
-#     return render(request, 'search_results.html', context)
-
-import pandas as pd
-#power 
-def get_data(request):
-    data = Order.objects.all()
-    
-    # สร้าง DataFrame
-    dataframe = {
-        'category': [order.product_category.name for order in data],
-        'quantity': [order.quantity for order in data]
-    }
-    df = pd.DataFrame(dataframe)
-    
-    # รวมปริมาณสินค้าตามประเภท
-    total_quantity_by_category = df.groupby('category')['quantity'].sum()
-    
-    # แสดงผลลัพธ์
-    print(total_quantity_by_category)
-    
-    # ส่งผลลัพธ์กลับเป็น HTTP response
-    return HttpResponse(total_quantity_by_category.to_string())
-    # return JsonResponse(dataframe, safe=False)
